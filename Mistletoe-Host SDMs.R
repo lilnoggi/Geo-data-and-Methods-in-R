@@ -64,7 +64,13 @@ REGION_PRESETS <- list(
 )
 
 
-
+# Function generates current SDMs for a pair of species in a user-defined region
+run_current_sdm <- function(species1, species2, region){
+  
+  # Create list to store the map outputs
+  current_sdm_maps <- list()
+  
+}
   
   
 

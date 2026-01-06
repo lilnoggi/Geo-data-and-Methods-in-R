@@ -82,7 +82,7 @@ run_current_sdm <- function(species1, species2, region){
     
     # -1- Define file path and download occurrence data ------------------------------------------------------
     
-    sp_file <- file.path("data", "raw", paste0(sp_filename, ".rds"))
+    sp_file <- file.path(wd, "data", "raw", paste0(sp_filename, ".rds"))
     
     if (!file.exists(sp_file)) {
       message("Downloading occurrences from GBIF (may take a few seconds)...")
@@ -104,6 +104,63 @@ run_current_sdm <- function(species1, species2, region){
     
     coords <- na.omit(coords)
     cat("Records with coordinates:", nrow(coords), "\n")
+    
+    
+    # -1.2- Clip to study region chosen by user --------------------------------------------------------------
+    
+    if (!region %in% names(REGION_PRESETS)) {
+      stop("Region not found. Please choose from the preset list.")
+    }
+    
+    # Get boundaries for chosen region
+    bounds <- REGION_PRESETS[[region]]
+    coords_region <- coords %>%
+      filter(lon >= bounds[1], lon <= bounds[2],
+             lat >= bounds[3], lat <= bounds[4])
+    
+    # Create extent for chosen region
+    study_ext <- ext(bounds[1], bounds[2], bounds[3], bounds[4])
+    
+    
+    # -1.3- Remove occurrence points in the ocean ------------------------------------------------------------
+    
+    # Download the ocean data
+    ocean_data_dir <- file.path(wd, "data", "raw", "ocean")
+    
+    if (!dir.exists(ocean_data_dir)) dir.create(ocean_data_dir)
+    URL <- "https://naturalearth.s3.amazonaws.com/110m_physical/ne_110m_ocean.zip"
+    zip_file <- file.path(ocean_data_dir, basename(URL))
+    if (!file.exists(zip_file)) {
+      download.file(URL, zip_file)
+    }
+    
+    files <- unzip(zip_file, exdir = ocean_data_dir)
+    
+    # Find the shapefile (.shp)
+    shp_file <- files[grepl("\\.shp$", files)]
+    
+    # Read with terra
+    ocean <- vect(shp_file)
+    
+    # Convert coordinates to SpatVector
+    species_vect <- vect(coords_region, geom = c("lon", "lat"), crs = "EPSG:4326")
+    
+    # Make sure CRS matches ocean
+    crs(species_vect) <- crs(ocean)
+    
+    # Generate a matrix that checks every point against every ocean polygon
+    ocean_intersects <- relate(species_vect, ocean, relation = "intersects")
+    
+    # Create a logical vector that returns TRUE if a point is in any ocean polygon
+    is_ocean <- apply(ocean_intersects, 1, any)
+    
+    # Store the points that DO NOT intersect with the ocean polygons
+    species_land_vect <- species_vect[!is_ocean, ]
+    
+    # Convert back to data.frame of coordinates
+    species.coords <- as.data.frame(geom(species_land_vect)[, c("x", "y")])
+    colnames(species.coords) <- c("lon", "lat")
+    
     
     
     

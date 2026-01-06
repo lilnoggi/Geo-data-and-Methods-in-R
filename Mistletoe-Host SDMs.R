@@ -96,8 +96,18 @@ run_current_sdm <- function(species1, species2, region){
     }
     
     
+    # -1.1- Extract and clean coordinates --------------------------------------------------------------------
+    
+    coords <- occ_df %>%
+      dplyr::select(decimalLongitude, decimalLatitude) %>%
+      rename(lon = decimalLongitude, lat = decimalLatitude)
+    
+    coords <- na.omit(coords)
+    cat("Records with coordinates:", nrow(coords), "\n")
     
     
+    
+  }
 }
   
   

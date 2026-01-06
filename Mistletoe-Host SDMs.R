@@ -70,6 +70,34 @@ run_current_sdm <- function(species1, species2, region){
   # Create list to store the map outputs
   current_sdm_maps <- list()
   
+  # Iterate current SDM generation for the user's species 1 and species 2
+  chosen_species <- c(species1, species2)
+  
+  for (sp_name in chosen_species) {
+    message(paste("Running current SDM generation for: ", sp_name))
+    
+    # Replace space " " with an underscore "_"
+    sp_filename <- gsub(" ", "_", sp_name)
+    
+    
+    # -1- Define file path and download occurrence data ------------------------------------------------------
+    
+    sp_file <- file.path("data", "raw", paste0(sp_filename, ".rds"))
+    
+    if (!file.exists(sp_file)) {
+      message("Downloading occurrences from GBIF (may take a few seconds)...")
+      # Limit download to 10,000 data points
+      occ <- occ_search(scientificName = sp_name, hasCoordinate = TRUE, limit = 10000)
+      occ_df <- occ$data
+      saveRDS(occ_df, sp_file)
+    } else {
+      # Load if already exists
+      occ_df <- readRDS(sp_file)
+    }
+    
+    
+    
+    
 }
   
   

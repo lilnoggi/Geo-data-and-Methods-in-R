@@ -65,7 +65,7 @@ REGION_PRESETS <- list(
 
 
 # Function generates current SDMs for a pair of species in a user-defined region
-run_current_sdm <- function(species1, species2, region){
+run_current_sdm <- function(species1, species2, region) {
   
   # Create list to store the map outputs
   current_sdm_maps <- list()
@@ -119,7 +119,7 @@ run_current_sdm <- function(species1, species2, region){
              lat >= bounds[3], lat <= bounds[4])
     
     # Create extent for chosen region
-    study_ext <- ext(bounds[1], bounds[2], bounds[3], bounds[4])
+    region_ext <- ext(bounds[1], bounds[2], bounds[3], bounds[4])
     
     
     # -1.3- Remove occurrence points in the ocean ------------------------------------------------------------
@@ -160,6 +160,45 @@ run_current_sdm <- function(species1, species2, region){
     # Convert back to data.frame of coordinates
     species.coords <- as.data.frame(geom(species_land_vect)[, c("x", "y")])
     colnames(species.coords) <- c("lon", "lat")
+    
+    
+    # -2- Environmental data and WorldClim bioclimatic variables ---------------------------------------------
+    
+    # Create file path for the climate data
+    bioclim_dir <- file.path(wd, "data", "raw", "worldclim")
+    if (!dir.exists(bioclim_dir)) dir.create(bioclim_dir)
+    
+    # Download 19 bioclim variables at 10 arc-minute resolution
+    bioclim <- worldclim_global(var = "bio", res = 10, path = bioclim_dir)
+    names(bioclim) <- paste0("bio", 1:19)
+    
+    
+    # -2.1- Define a study extent with a buffer --------------------------------------------------------------
+    
+    xy <- crds(species_land_vect)
+    study_ext <- ext(min(xy[,1]) - 5, max(xy[,1]) + 5, min(xy[,2]) - 5, max(xy[,2]) + 5)
+    bioclim_crop <- crop(bioclim, study_ext)
+    
+    
+    # -2.2- Extract raster values at occurrence points -------------------------------------------------------
+    
+    # Ensure point CRS matches rasters
+    species_pts <- project(species_land_vect, crs(bioclim_crop))
+    
+    # Extract climate values at points
+    clim_vals <- terra::extract(bioclim_crop, species_pts)
+    
+    # Combine coordinates with climate values
+    species_data <- bind_cols(
+      as_tibble(crds(species_pts)) %>% rename(lon = x, lat = y),
+      as_tibble(clim_vals)[,-1]
+    ) %>% drop_na()
+    
+    # Save processed data
+    write.csv(species_data, file.path(wd,"data", "processed", paste0(sp_filename, ".csv")))
+    
+    
+    
     
     
     

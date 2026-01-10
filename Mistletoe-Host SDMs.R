@@ -212,9 +212,91 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     
     # -3- Current Species Distribution Model Generation ------------------------------------------------------
     
+    # -3.1- Generate background/pseudo-absence points -------------------------------------------------------------------
+    
+    # Sample random points from the first layer of the cropped climate data
+    set.seed(123)
+    bg_n <- 500
+    bg_pts <- spatSample(bioclim_crop[[1]], size = bg_n, method = "random",
+                         na.rm = TRUE, as.points = TRUE, values = FALSE)
+    
+    # Extract climate values for these background points
+    bg_clim <- terra::extract(bioclim_crop, bg_pts)
+    
+    # Format background point data
+    bg_coords <- as.data.frame(crds(bg_pts))
+    colnames(bg_coords) <- c("lon", "lat")
+    
+    background_data <- bind_cols(bg_coords, as_tibble(bg_clim)[,-1]) %>%
+      mutate(presence = 0) %>%
+      drop_na()
+    
+    # Format presence data (Presence = 1)
+    presence_data <- species_data %>% mutate(presence = 1)
     
     
+    # -3.2- Split data into training (70%) and testing (30%) data
     
+    # Split presence data
+    k = 0.7
+    pres_idx <- sample(nrow(presence_data), size = floor(k * nrow(presence_data)))
+    train_pres <- presence_data[pres_idx, ]
+    test_pres <- presence_data[-pres_idx, ]
+    
+    # Split background data
+    bg_idx <- sample(nrow(background_data), size = floor(k * nrow(background_data)))
+    train_bg <- background_data[bg_idx, ]
+    test_bg <- background_data[-bg_idx, ]
+    
+    # Combine for training
+    train_data <- bind_rows(train_pres, train_bg)
+    
+    
+    # -3.3- Fit GLM -----------------------------------------------------------------------------------------------------
+    
+    # Identify variables for this species defined by the user
+    current_vars <- predictor_list[[sp_name]]
+    if(is.null(current_vars)) stop(paste("No variables stored for", sp_name))
+    
+    message(paste("Fitting GLM with: ", paste(current_vars, collapse = ", ")))
+    
+    # Construct formula dynamically
+    formula_str <- paste("presence ~ ", paste(current_vars, collapse = " + "))
+    model_formula <- as.formula(formula_str)
+    
+    # Fit model using training data
+    sdm_model <- glm(model_formula, data = train_data, family = binomical)
+    
+    
+    # -3.4- Evaluate model ----------------------------------------------------------------------------------------------
+    
+    # Evaluate using held-out test data
+    eval_res <- evaluate(
+      p = test_pres %>% dplyr::select(current_vars),
+      a = test_bg %>% dplyr::select(current_vars),
+      model = sdm_model
+    )
+    cat("AUC score:", eval_res@auc, "\n")
+    
+    
+    # -3.5- Predict and Map ---------------------------------------------------------------------------------------------
+    
+    # Ensure raster has those layers
+    if (!all(current_vars %in% names(bioclim_crop))) {
+      stop("ERROR: One or more predictor layers not found in bioclim_crop: ", paste(pred_vars, collapse = ", "))
+    }
+    
+    # Predict suitability across the full study extent
+    prediction <- terra::predict(bioclim_crop[[current_vars]], sdm_model, type = "response")
+    
+    # Store in list to contain map using the species name as a label
+    current_sdm_maps[[sp_name]] <- prediction
+    
+    # Plot
+    plot(prediction, main = paste("SDM:", sp_name, "\nAUC:", round(auc_score, 2)))
+    points(species_land_vect, pch = 16, cex = 0.5, col = "black")
+    
+    cat("--------------------------------------------------------------------------\n")
     
     
   }

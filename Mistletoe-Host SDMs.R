@@ -42,17 +42,19 @@ for (f in folders) {
 
 
 # ============================================================================================================
-#                                              --- TASK 1 ---
+#                                           --- USER SET-UP ---
 # ============================================================================================================
 
-# This section involves running GLMs to  predict the present-day distribution of Species 1
-# and Species 2 using climate variables. Then, these are used to present maps of their
-# current distribution.
-# Here, a function is written for the user to input the two species they are interested in,
-# and what region they want to focus on (Europe, North/South America, Asia, Oceania, Africa).
+# Define species 1 and species 2
+sp1 <- "Viscum album"
+sp2 <- "Malus domestica"
 
+# Define chosen bioclimatic variables for each species
+sp_predictors <- list()
+sp_predictors[[sp1]] <- c("bio1", "bio5", "bio6")
+sp_predictors[[sp2]] <- c("bio12", "bio15", "bio18")
 
-# Region presets with 
+# Region presets with lon and lat bounds - add more if desired
 REGION_PRESETS <- list(
   "Africa"        = c(-20, 55, -40, 40),
   "Europe"        = c(-25, 60, 34, 72),
@@ -64,8 +66,18 @@ REGION_PRESETS <- list(
 )
 
 
+# ============================================================================================================
+#                                              --- TASK 1 ---
+# ============================================================================================================
+
+# This section involves running GLMs to  predict the present-day distribution of Species 1
+# and Species 2 using climate variables. Then, these are used to present maps of their
+# current distribution.
+# Here, a function is written for the user to input the two species they are interested in,
+# and what region they want to focus on (Europe, North/South America, Asia, Oceania, Africa).
+
 # Function generates current SDMs for a pair of species in a user-defined region
-run_current_sdm <- function(species1, species2, region) {
+run_current_sdm <- function(species1, species2, region, predictor_list) {
   
   # Create list to store the map outputs
   current_sdm_maps <- list()
@@ -197,6 +209,8 @@ run_current_sdm <- function(species1, species2, region) {
     # Save processed data
     write.csv(species_data, file.path(wd,"data", "processed", paste0(sp_filename, ".csv")))
     
+    
+    # -3- Current Species Distribution Model Generation ------------------------------------------------------
     
     
     

@@ -51,8 +51,8 @@ sp2 <- "Malus domestica"
 
 # Define chosen bioclimatic variables for each species
 sp_predictors <- list()
-sp_predictors[[sp1]] <- c("bio1", "bio5", "bio6")
-sp_predictors[[sp2]] <- c("bio12", "bio15", "bio18")
+sp_predictors[[sp1]] <- c("bio1", "bio6", "bio11")
+sp_predictors[[sp2]] <- c("bio6", "bio11", "bio10")
 
 # Region presets with lon and lat bounds - add more if desired
 REGION_PRESETS <- list(
@@ -265,7 +265,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     model_formula <- as.formula(formula_str)
     
     # Fit model using training data
-    sdm_model <- glm(model_formula, data = train_data, family = binomical)
+    sdm_model <- glm(model_formula, data = train_data, family = binomial)
     
     
     # -3.4- Evaluate model ----------------------------------------------------------------------------------------------
@@ -306,7 +306,8 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
   return(current_sdm_maps)
   
 }
-  
+
+run_current_sdm(sp1, sp2, "Europe", sp_predictors)  
   
 
 

@@ -296,10 +296,15 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     plot(prediction, main = paste("SDM:", sp_name, "\nAUC:", round(auc_score, 2)))
     points(species_land_vect, pch = 16, cex = 0.5, col = "black")
     
+    message("Completed generation of current SDM for:", sp_name)
+    
     cat("--------------------------------------------------------------------------\n")
-    
-    
+
   }
+  
+  message("All SDMs generated successfully. Returning map list...")
+  return(current_sdm_maps)
+  
 }
   
   

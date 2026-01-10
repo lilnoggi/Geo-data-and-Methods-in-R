@@ -33,6 +33,7 @@ library(showtext)
 
 # Set working directory
 wd <- setwd("C:/University Work/Year 3 Biology/HT/R Coding Assignment/Geo-data and Methods in R - Assigment")
+setwd(wd)
 
 # Create folders 
 folders <- c("data/raw", "data/processed", "outputs/maps")
@@ -307,7 +308,8 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
   
 }
 
-run_current_sdm(sp1, sp2, "Europe", sp_predictors)
+run_current_sdm(sp1, sp2, "North America", sp_predictors)
+
   
 
 

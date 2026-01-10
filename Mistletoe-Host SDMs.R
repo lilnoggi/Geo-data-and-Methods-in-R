@@ -293,7 +293,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     current_sdm_maps[[sp_name]] <- prediction
     
     # Plot
-    plot(prediction, main = paste("SDM:", sp_name, "\nAUC:", round(auc_score, 2)))
+    plot(prediction, main = paste("SDM:", sp_name))
     points(species_land_vect, pch = 16, cex = 0.5, col = "black")
     
     message("Completed generation of current SDM for:", sp_name)
@@ -307,7 +307,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
   
 }
 
-run_current_sdm(sp1, sp2, "Europe", sp_predictors)  
+run_current_sdm(sp1, sp2, "Europe", sp_predictors)
   
 
 

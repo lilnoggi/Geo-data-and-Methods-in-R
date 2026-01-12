@@ -9,6 +9,7 @@ install.packages(c(
   "ggplot2",
   "sysfonts",
   "showtext",
+  "here",
   "terra", 
   "geodata", 
   "rnaturalearth", 
@@ -22,6 +23,7 @@ install.packages(c(
 # Load packages
 library(dplyr)
 library(ggplot2)
+library(here)
 library(terra)
 library(geodata)
 library(rnaturalearth)
@@ -31,14 +33,10 @@ library(rgbif)
 library(sysfonts)
 library(showtext)
 
-# Set working directory
-wd <- setwd("C:/University Work/Year 3 Biology/HT/R Coding Assignment/Geo-data and Methods in R - Assigment")
-setwd(wd)
-
 # Create folders 
 folders <- c("data/raw", "data/processed", "outputs/maps")
 for (f in folders) {
-  dir.create(file.path(wd, f), recursive = TRUE, showWarnings = FALSE)
+  dir.create(here(f), recursive = TRUE, showWarnings = FALSE)
 }
 
 
@@ -95,7 +93,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     
     # -1- Define file path and download occurrence data ------------------------------------------------------
     
-    sp_file <- file.path(wd, "data", "raw", paste0(sp_filename, ".rds"))
+    sp_file <- here("data", "raw", paste0(sp_filename, ".rds"))
     
     if (!file.exists(sp_file)) {
       message("Downloading occurrences from GBIF (may take a few seconds)...")
@@ -138,7 +136,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     # -1.3- Remove occurrence points in the ocean ------------------------------------------------------------
     
     # Download the ocean data
-    ocean_data_dir <- file.path(wd, "data", "raw", "ocean")
+    ocean_data_dir <- here("data", "raw", "ocean")
     
     if (!dir.exists(ocean_data_dir)) dir.create(ocean_data_dir)
     URL <- "https://naturalearth.s3.amazonaws.com/110m_physical/ne_110m_ocean.zip"
@@ -178,7 +176,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     # -2- Environmental data and WorldClim bioclimatic variables ---------------------------------------------
     
     # Create file path for the climate data
-    bioclim_dir <- file.path(wd, "data", "raw", "worldclim")
+    bioclim_dir <- here("data", "raw", "worldclim")
     if (!dir.exists(bioclim_dir)) dir.create(bioclim_dir)
     
     # Download 19 bioclim variables at 10 arc-minute resolution
@@ -208,10 +206,16 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     ) %>% drop_na()
     
     # Save processed data
-    write.csv(species_data, file.path(wd,"data", "processed", paste0(sp_filename, ".csv")))
+    write.csv(species_data, here("data", "processed", paste0(sp_filename, ".csv")))
     
     
     # -3- Current Species Distribution Model Generation ------------------------------------------------------
+    
+    # This section includes building the GLM by generating pseudo-absence points (as we
+    # don't have the data for actual absences) and splitting the presence/absence data
+    # into training and testing data sets. The GLM fitted using the training data, and
+    # evaluated via AUC scores using the testing data. Using this model, we can map a
+    # prediction for habitat suitability.
     
     # -3.1- Generate background/pseudo-absence points -------------------------------------------------------------------
     

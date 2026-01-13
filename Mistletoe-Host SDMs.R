@@ -95,10 +95,13 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     download.file(URL, zip_file)
   }
   
-  files <- unzip(zip_file, exdir = ocean_data_dir)
+  # Only unzips if it hasn't been unzipped already
+  if (length(list.files(ocean_data_dir, pattern = "\\.shp$")) == 0) {
+    unzip(zip_file, exdir = ocean_data_dir)
+  }
   
-  # Find the shapefile (.shp)
-  shp_file <- files[grepl("\\.shp$", files)][1]
+  # Find the shapefile
+  shp_file <- list.files(ocean_data_dir, pattern = "\\.shp$", full.names = TRUE)[1]
   
   # Read with terra
   ocean <- vect(shp_file)

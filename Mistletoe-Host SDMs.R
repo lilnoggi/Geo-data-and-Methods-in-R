@@ -223,8 +223,6 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
       as_tibble(clim_vals)[,-1]
     ) %>% drop_na()
     
-    cat("Final number of dataset rows:", nrow(species_data), "\n")
-    
     # [SAFETY CHECK] Check processed occurrence points in region before generating current SDM
     min_obs <- 50
     
@@ -233,6 +231,8 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
                     "in", region, ". Only", nrow(species_data), "valid points found."))
       next
     }
+    
+    cat("Final number of dataset rows:", nrow(species_data), "\n")
     
     # Save processed data
     write.csv(species_data, here("data", "processed", paste0(sp_filename, ".csv")))

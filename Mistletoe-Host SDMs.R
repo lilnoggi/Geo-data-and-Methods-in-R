@@ -45,13 +45,13 @@ for (f in folders) {
 # ==============================================================================================================
 
 # Define species 1 and species 2
-sp1 <- "Viscum album"
-sp2 <- "Malus domestica"
+sp1 <- "Loranthus europaeus"
+sp2 <- "Quercus petraea"
 
 # Define chosen bioclimatic variables for each species
 sp_predictors <- list()
-sp_predictors[[sp1]] <- c("bio6", "bio7", "bio17")
-sp_predictors[[sp2]] <- c("bio6", "bio11", "bio10")
+sp_predictors[[sp1]] <- c("bio3", "bio8", "bio15")
+sp_predictors[[sp2]] <- c("bio1", "bio4", "bio12")
 
 # Region presets with lon and lat bounds - add more if desired
 REGION_PRESETS <- list(
@@ -75,11 +75,59 @@ REGION_PRESETS <- list(
 # Here, a function is written for the user to input the two species they are interested in,
 # and what region they want to focus on (Europe, North/South America, Asia, Oceania, Africa).
 
+
 # Function generates current SDMs for a pair of species in a user-defined region
 run_current_sdm <- function(species1, species2, region, predictor_list) {
   
+  # -1- Load static data once and prepare places to store outputs ----------------------------------------------
+  
+  message("Loading environmental and ocean data (may take a few seconds)...")
+  
+  
+  # -1.1- Download the ocean data ------------------------------------------------------------------------------
+  
+  ocean_data_dir <- here("data", "raw", "ocean")
+  
+  if (!dir.exists(ocean_data_dir)) dir.create(ocean_data_dir)
+  URL <- "https://naturalearth.s3.amazonaws.com/110m_physical/ne_110m_ocean.zip"
+  zip_file <- file.path(ocean_data_dir, basename(URL))
+  if (!file.exists(zip_file)) {
+    download.file(URL, zip_file)
+  }
+  
+  files <- unzip(zip_file, exdir = ocean_data_dir)
+  
+  # Find the shapefile (.shp)
+  shp_file <- files[grepl("\\.shp$", files)][1]
+  
+  # Read with terra
+  ocean <- vect(shp_file)
+  
+  
+  # -1.2- Download environmental data --------------------------------------------------------------------------
+  
+  # Create file path for the climate data
+  bioclim_dir <- here("data", "raw", "worldclim")
+  if(!dir.exists(bioclim_dir)) dir.create(bioclim_dir)
+  
+  # Download 19 bioclim variables at 10 arc-minute resolution
+  bioclim_global <- worldclim_global(var = "bio", res = 10, path = bioclim_dir)
+  names(bioclim_global) <- paste0("bio", 1:19)
+  
+  
+  # -1.3- Prepare places to store outputs after for loop executed ----------------------------------------------
+  
   # Create list to store the map outputs
   current_sdm_maps <- list()
+  
+  # Create a table to store results
+  results_stats <- data.frame(
+    Species = character(),
+    Region = character(),
+    N_Points = numeric(),
+    AUC = numeric(),
+    stringsAsFactors = FALSE
+  )
   
   # Iterate current SDM generation for the user's species 1 and species 2
   chosen_species <- c(species1, species2)
@@ -91,7 +139,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     sp_filename <- gsub(" ", "_", sp_name)
     
     
-    # -1- Define file path and download occurrence data --------------------------------------------------------
+    # -2- Define file path and download occurrence data --------------------------------------------------------
     
     sp_file <- here("data", "raw", paste0(sp_filename, ".rds"))
     
@@ -113,7 +161,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     }
     
     
-    # -1.1- Extract and clean coordinates ----------------------------------------------------------------------
+    # -2.1- Extract and clean coordinates ----------------------------------------------------------------------
     
     coords <- occ_df %>%
       dplyr::select(decimalLongitude, decimalLatitude) %>%
@@ -123,7 +171,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     cat("Records with coordinates:", nrow(coords), "\n")
     
     
-    # -1.2- Clip to study region chosen by user ----------------------------------------------------------------
+    # -2.2- Clip to study region chosen by user ----------------------------------------------------------------
     
     if (!region %in% names(REGION_PRESETS)) {
       stop("Region not found. Please choose from the preset list.")
@@ -147,29 +195,8 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     
     cat("Records in ", region, ":", nrow(coords_region), "\n")
     
-    # Create extent for chosen region
-    region_ext <- ext(bounds[1], bounds[2], bounds[3], bounds[4])
-    
-    
-    # -1.3- Remove occurrence points in the ocean --------------------------------------------------------------
-    
-    # Download the ocean data
-    ocean_data_dir <- here("data", "raw", "ocean")
-    
-    if (!dir.exists(ocean_data_dir)) dir.create(ocean_data_dir)
-    URL <- "https://naturalearth.s3.amazonaws.com/110m_physical/ne_110m_ocean.zip"
-    zip_file <- file.path(ocean_data_dir, basename(URL))
-    if (!file.exists(zip_file)) {
-      download.file(URL, zip_file)
-    }
-    
-    files <- unzip(zip_file, exdir = ocean_data_dir)
-    
-    # Find the shapefile (.shp)
-    shp_file <- files[grepl("\\.shp$", files)]
-    
-    # Read with terra
-    ocean <- vect(shp_file)
+
+    # -2.3- Remove occurrence points in the ocean --------------------------------------------------------------
     
     # Convert coordinates to SpatVector
     species_vect <- vect(coords_region, geom = c("lon", "lat"), crs = "EPSG:4326")
@@ -191,25 +218,15 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     colnames(species.coords) <- c("lon", "lat")
     
     
-    # -2- Environmental data and WorldClim bioclimatic variables -----------------------------------------------
+    # -3- Environmental data and WorldClim bioclimatic variables -----------------------------------------------
     
-    # Create file path for the climate data
-    bioclim_dir <- here("data", "raw", "worldclim")
-    if (!dir.exists(bioclim_dir)) dir.create(bioclim_dir)
+    # -3.1- Define a study extent with a buffer ----------------------------------------------------------------
     
-    # Download 19 bioclim variables at 10 arc-minute resolution
-    bioclim <- worldclim_global(var = "bio", res = 10, path = bioclim_dir)
-    names(bioclim) <- paste0("bio", 1:19)
+    region_ext <- ext(bounds[1], bounds[2], bounds[3], bounds[4])
+    bioclim_crop <- crop(bioclim_global, region_ext)
     
     
-    # -2.1- Define a study extent with a buffer ----------------------------------------------------------------
-    
-    xy <- crds(species_land_vect)
-    study_ext <- ext(min(xy[,1]) - 5, max(xy[,1]) + 5, min(xy[,2]) - 5, max(xy[,2]) + 5)
-    bioclim_crop <- crop(bioclim, study_ext)
-    
-    
-    # -2.2- Extract raster values at occurrence points ---------------------------------------------------------
+    # -3.2- Extract raster values at occurrence points ---------------------------------------------------------
     
     # Ensure point CRS matches rasters
     species_pts <- project(species_land_vect, crs(bioclim_crop))
@@ -238,7 +255,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     write.csv(species_data, here("data", "processed", paste0(sp_filename, ".csv")))
     
     
-    # -3- Current Species Distribution Model Generation --------------------------------------------------------
+    # -4- Current Species Distribution Model Generation --------------------------------------------------------
     
     # This section includes building the GLM by generating pseudo-absence points (as we
     # don't have the data for actual absences) and splitting the presence/absence data
@@ -247,11 +264,13 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     # prediction for habitat suitability.
     
     
-    # -3.1- Generate background/pseudo-absence points ----------------------------------------------------------
+    # -4.1- Generate background/pseudo-absence points ----------------------------------------------------------
+    
+    # Dynamic sample size for background points (either 1000 or number of presences if > 1000)
+    bg_n <- max(1000, nrow(species_data))
     
     # Sample random points from the first layer of the cropped climate data
     set.seed(123)
-    bg_n <- 500
     bg_pts <- spatSample(bioclim_crop[[1]], size = bg_n, method = "random",
                          na.rm = TRUE, as.points = TRUE, values = FALSE)
     
@@ -272,7 +291,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     presence_data <- species_data %>% mutate(presence = 1)
     
     
-    # -3.2- Split data into training (70%) and testing (30%) data
+    # -4.2- Split data into training (70%) and testing (30%) data
     
     # Split presence data
     k = 0.7
@@ -289,7 +308,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     train_data <- bind_rows(train_pres, train_bg)
     
     
-    # -3.3- Fit GLM --------------------------------------------------------------------------------------------
+    # -4.3- Fit GLM --------------------------------------------------------------------------------------------
     
     # Identify variables for this species defined by the user
     current_vars <- predictor_list[[sp_name]]
@@ -305,7 +324,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     sdm_model <- glm(model_formula, data = train_data, family = binomial)
     
     
-    # -3.4- Evaluate model -------------------------------------------------------------------------------------
+    # -4.4- Evaluate model -------------------------------------------------------------------------------------
     
     # Evaluate using held-out test data
     eval_res <- evaluate(
@@ -316,11 +335,11 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     cat("AUC score:", eval_res@auc, "\n")
     
     
-    # -3.5- Predict and Map ------------------------------------------------------------------------------------
+    # -4.5- Predict and Map ------------------------------------------------------------------------------------
     
     # Ensure raster has those layers
     if (!all(current_vars %in% names(bioclim_crop))) {
-      stop("ERROR: One or more predictor layers not found in bioclim_crop: ", paste(pred_vars, collapse = ", "))
+      stop("ERROR: One or more predictor layers not found in bioclim_crop: ", paste(current_vars, collapse = ", "))
     }
     
     # Predict suitability across the full study extent
@@ -328,6 +347,14 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     
     # Store in list to contain map using the species name as a label
     current_sdm_maps[[sp_name]] <- prediction
+    
+    # Save stats to dataframe
+    results_stats <- rbind(results_stats, data.frame(
+      Species = sp_name,
+      Region = region,
+      N_Points = nrow(species_data),
+      AUC = eval_res@auc
+    ))
     
     # Plot
     plot(prediction, main = paste("SDM:", sp_name))
@@ -340,14 +367,20 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
   }
   
   message("All SDMs generated successfully. Returning map list...")
-  return(current_sdm_maps)
+  return(list(maps = current_sdm_maps, stats = results_stats))
   
 }
 
 
-run_current_sdm(sp1, sp2, "Europe", sp_predictors)
+# Run the function
+output <- run_current_sdm(sp1, sp2, "Europe", sp_predictors)
 
-  
+# Get the maps for Task 2
+my_maps <- output$maps
+
+# Get the stats table for the current SDMs
+print(output$stats)
+
 
 
 

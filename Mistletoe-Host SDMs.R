@@ -17,7 +17,8 @@ install.packages(c(
   "dismo", 
   "tidyverse", 
   "rgbif", 
-  "raster" 
+  "raster",
+  "caret"
 ))
 
 # Load packages
@@ -32,6 +33,7 @@ library(tidyr)
 library(rgbif)
 library(sysfonts)
 library(showtext)
+library(caret)
 
 # Create folders 
 folders <- c("data/raw", "data/processed", "outputs/maps")
@@ -50,8 +52,8 @@ sp2 <- "Quercus petraea"
 
 # Define chosen bioclimatic variables for each species
 sp_predictors <- list()
-sp_predictors[[sp1]] <- c("bio3", "bio8", "bio15")
-sp_predictors[[sp2]] <- c("bio1", "bio4", "bio12")
+sp_predictors[[sp1]] <- NULL
+sp_predictors[[sp2]] <- NULL
 
 # Region presets with lon and lat bounds - add more if desired
 REGION_PRESETS <- list(
@@ -65,6 +67,7 @@ REGION_PRESETS <- list(
 )
 
 
+
 # ==============================================================================================================
 #                                              --- TASK 1 ---
 # ==============================================================================================================
@@ -76,15 +79,61 @@ REGION_PRESETS <- list(
 # and what region they want to focus on (Europe, North/South America, Asia, Oceania, Africa).
 
 
+
+################################################################################################################
+# Function which takes a presence/background points + bioclim vars 1-19 to find most parsimonious mode
+bioclim_selection <- function(input_data) {
+  
+  # Only look at 'bio' columns for correlation
+  bio_cols <- grep("bio", names(input_data), value = TRUE)
+  
+  
+  # -1- Checking for multicollinearity -------------------------------------------------------------------------
+  
+  # Calculate correlation matrix
+  cor_matrix <- cor(input_data[, bio_cols], method = "spearman")
+  
+  # Find the most highly correlated variables - these will be removed
+  high_cor_vars <- findCorrelation(cor_matrix, cutoff = 0.7)
+  
+  # Store names of vweakly correlated variables to keep
+  weak_cor_vars <- bio_cols
+  if (length(high_cor_vars) > 0) {
+    clean_vars <- bio_cols[-high_cor_vars]
+  }
+  
+  
+  # -2- Stepwise AIC selection ---------------------------------------------------------------------------------
+  
+  # Fit a model using only weakly correlated variables
+  form_start <- as.formula(paste("presence ~", paste(weak_cor_vars, collapse = "+")))
+  
+  # Suppress warnings for initial fit
+  full_model <- suppressWarnings(glm(form_start, data = input_data, family = binomial))
+  
+  # Run stepwise selection which uses AIC to compare different subsets of the model
+  best_model <- step(full_model, direction = "both", trace = 0)
+  
+  # Extract the names of the 'winning' variables (and remove the intercept)
+  best_vars <- names(coef(best_model))[-1]
+  
+  return(best_vars)
+  
+}
+################################################################################################################
+
+
+
+################################################################################################################
 # Function generates current SDMs for a pair of species in a user-defined region
 run_current_sdm <- function(species1, species2, region, predictor_list) {
   
-  # -1- Load static data once and prepare places to store outputs ----------------------------------------------
+  # -3- Load static data once and prepare places to store outputs ----------------------------------------------
   
   message("Loading environmental and ocean data (may take a few seconds)...")
   
   
-  # -1.1- Download the ocean data ------------------------------------------------------------------------------
+  # -3.1- Download the ocean data ------------------------------------------------------------------------------
   
   ocean_data_dir <- here("data", "raw", "ocean")
   
@@ -107,7 +156,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
   ocean <- vect(shp_file)
   
   
-  # -1.2- Download environmental data --------------------------------------------------------------------------
+  # -3.2- Download environmental data --------------------------------------------------------------------------
   
   # Create file path for the climate data
   bioclim_dir <- here("data", "raw", "worldclim")
@@ -118,7 +167,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
   names(bioclim_global) <- paste0("bio", 1:19)
   
   
-  # -1.3- Prepare places to store outputs after for loop executed ----------------------------------------------
+  # -3.3- Prepare places to store outputs after for loop executed ----------------------------------------------
   
   # Create list to store the map outputs
   current_sdm_maps <- list()
@@ -142,7 +191,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     sp_filename <- gsub(" ", "_", sp_name)
     
     
-    # -2- Define file path and download occurrence data --------------------------------------------------------
+    # -4- Define file path and download occurrence data --------------------------------------------------------
     
     sp_file <- here("data", "raw", paste0(sp_filename, ".rds"))
     
@@ -164,7 +213,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     }
     
     
-    # -2.1- Extract and clean coordinates ----------------------------------------------------------------------
+    # -4.1- Extract and clean coordinates ----------------------------------------------------------------------
     
     coords <- occ_df %>%
       dplyr::select(decimalLongitude, decimalLatitude) %>%
@@ -174,7 +223,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     cat("Records with coordinates:", nrow(coords), "\n")
     
     
-    # -2.2- Clip to study region chosen by user ----------------------------------------------------------------
+    # -4.2- Clip to study region chosen by user ----------------------------------------------------------------
     
     if (!region %in% names(REGION_PRESETS)) {
       stop("Region not found. Please choose from the preset list.")
@@ -199,7 +248,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     cat("Records in ", region, ":", nrow(coords_region), "\n")
     
 
-    # -2.3- Remove occurrence points in the ocean --------------------------------------------------------------
+    # -4.3- Remove occurrence points in the ocean --------------------------------------------------------------
     
     # Convert coordinates to SpatVector
     species_vect <- vect(coords_region, geom = c("lon", "lat"), crs = "EPSG:4326")
@@ -221,15 +270,15 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     colnames(species.coords) <- c("lon", "lat")
     
     
-    # -3- Environmental data and WorldClim bioclimatic variables -----------------------------------------------
+    # -5- Environmental data and WorldClim bioclimatic variables -----------------------------------------------
     
-    # -3.1- Define a study extent with a buffer ----------------------------------------------------------------
+    # -5.1- Define a study extent with a buffer ----------------------------------------------------------------
     
     region_ext <- ext(bounds[1], bounds[2], bounds[3], bounds[4])
     bioclim_crop <- crop(bioclim_global, region_ext)
     
     
-    # -3.2- Extract raster values at occurrence points ---------------------------------------------------------
+    # -5.2- Extract raster values at occurrence points ---------------------------------------------------------
     
     # Ensure point CRS matches rasters
     species_pts <- project(species_land_vect, crs(bioclim_crop))
@@ -258,7 +307,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     write.csv(species_data, here("data", "processed", paste0(sp_filename, ".csv")))
     
     
-    # -4- Current Species Distribution Model Generation --------------------------------------------------------
+    # -6- Current Species Distribution Model Generation --------------------------------------------------------
     
     # This section includes building the GLM by generating pseudo-absence points (as we
     # don't have the data for actual absences) and splitting the presence/absence data
@@ -267,7 +316,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     # prediction for habitat suitability.
     
     
-    # -4.1- Generate background/pseudo-absence points ----------------------------------------------------------
+    # -6.1- Generate background/pseudo-absence points ----------------------------------------------------------
     
     # Dynamic sample size for background points (either 1000 or number of presences if > 1000)
     bg_n <- max(1000, nrow(species_data))
@@ -294,7 +343,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     presence_data <- species_data %>% mutate(presence = 1)
     
     
-    # -4.2- Split data into training (70%) and testing (30%) data
+    # -6.2- Split data into training (70%) and testing (30%) data
     
     # Split presence data
     k = 0.7
@@ -311,11 +360,23 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     train_data <- bind_rows(train_pres, train_bg)
     
     
-    # -4.3- Fit GLM --------------------------------------------------------------------------------------------
+    # -6.3- Fit GLM --------------------------------------------------------------------------------------------
     
-    # Identify variables for this species defined by the user
+    # Check if variables provided by user
     current_vars <- predictor_list[[sp_name]]
-    if(is.null(current_vars)) stop(paste("No variables stored for", sp_name))
+    
+    # If no variables provided, run bioclim_selection() function to select best bioclimatic vars to use
+    if (is.null(current_vars)) {
+      
+      message("Calculating most parsimonious model...")
+      
+      # Call function to check for multicollinearity and perform stepwise AIC selection
+      current_vars <- bioclim_selection(train_data)
+      message(paste("Selected optimal bioclimatic variables:", paste(current_vars, collapse = ", ")))
+    }
+    
+    # [SAFETY CHECK] Check if any bioclim vars were actually stored
+    if (length(current_vars) == 0) stop("Variable selection failed. No predictors found.")
     
     message(paste("Fitting GLM with: ", paste(current_vars, collapse = ", ")))
     
@@ -327,7 +388,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     sdm_model <- glm(model_formula, data = train_data, family = binomial)
     
     
-    # -4.4- Evaluate model -------------------------------------------------------------------------------------
+    # -6.4- Evaluate model -------------------------------------------------------------------------------------
     
     # Evaluate using held-out test data
     eval_res <- evaluate(
@@ -338,7 +399,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     cat("AUC score:", eval_res@auc, "\n")
     
     
-    # -4.5- Predict and Map ------------------------------------------------------------------------------------
+    # -6.5- Predict and Map ------------------------------------------------------------------------------------
     
     # Ensure raster has those layers
     if (!all(current_vars %in% names(bioclim_crop))) {
@@ -373,6 +434,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
   return(list(maps = current_sdm_maps, stats = results_stats))
   
 }
+################################################################################################################
 
 
 # Run the function

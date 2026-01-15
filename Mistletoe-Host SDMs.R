@@ -79,7 +79,6 @@ REGION_PRESETS <- list(
 # and what region they want to focus on (Europe, North/South America, Asia, Oceania, Africa).
 
 
-
 ################################################################################################################
 # Function which takes a presence/background points + bioclim vars 1-19 to find most parsimonious mode
 bioclim_selection <- function(input_data) {
@@ -97,22 +96,24 @@ bioclim_selection <- function(input_data) {
   high_cor_vars <- findCorrelation(cor_matrix, cutoff = 0.7)
   
   # Store names of vweakly correlated variables to keep
-  weak_cor_vars <- bio_cols
   if (length(high_cor_vars) > 0) {
     clean_vars <- bio_cols[-high_cor_vars]
+  } else {
+    clean_vars <- bio_cols
   }
-  
   
   # -2- Stepwise AIC selection ---------------------------------------------------------------------------------
   
   # Fit a model using only weakly correlated variables
-  form_start <- as.formula(paste("presence ~", paste(weak_cor_vars, collapse = "+")))
+  form_start <- as.formula(paste("presence ~", paste(clean_vars, collapse = "+")))
   
   # Suppress warnings for initial fit
   full_model <- suppressWarnings(glm(form_start, data = input_data, family = binomial))
   
-  # Run stepwise selection which uses AIC to compare different subsets of the model
-  best_model <- step(full_model, direction = "both", trace = 0)
+  # Run stepwise selection which uses BIC to compare different subsets of the model
+  # BIC is stricter than AIC, particularly for bigger sample size (n)
+  n <- nrow(input_data)
+  best_model <- step(full_model, direction = "both", trace = 0, k = log(n))
   
   # Extract the names of the 'winning' variables (and remove the intercept)
   best_vars <- names(coef(best_model))[-1]
@@ -177,6 +178,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     Species = character(),
     Region = character(),
     N_Points = numeric(),
+    Bioclim_Vars = character(),
     AUC = numeric(),
     stringsAsFactors = FALSE
   )
@@ -272,10 +274,18 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     
     # -5- Environmental data and WorldClim bioclimatic variables -----------------------------------------------
     
-    # -5.1- Define a study extent with a buffer ----------------------------------------------------------------
+    # -5.1- Define a study extent and reduce sampling bias -----------------------------------------------------
     
     region_ext <- ext(bounds[1], bounds[2], bounds[3], bounds[4])
     bioclim_crop <- crop(bioclim_global, region_ext)
+    
+    # Identify the cell number for each point
+    cells <- cellFromXY(bioclim_crop, geom(species_land_vect)[, c("x", "y")])
+    
+    # Remove duplicate points
+    species_land_vect <- species_land_vect[!duplicated(cells), ]
+    
+    cat("Points remaining after spatial thinning:", length(species_land_vect), "\n")
     
     
     # -5.2- Extract raster values at occurrence points ---------------------------------------------------------
@@ -343,7 +353,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
     presence_data <- species_data %>% mutate(presence = 1)
     
     
-    # -6.2- Split data into training (70%) and testing (30%) data
+    # -6.2- Split data into training (70%) and testing (30%) data ----------------------------------------------
     
     # Split presence data
     k = 0.7
@@ -372,13 +382,12 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
       
       # Call function to check for multicollinearity and perform stepwise AIC selection
       current_vars <- bioclim_selection(train_data)
-      message(paste("Selected optimal bioclimatic variables:", paste(current_vars, collapse = ", ")))
     }
     
     # [SAFETY CHECK] Check if any bioclim vars were actually stored
     if (length(current_vars) == 0) stop("Variable selection failed. No predictors found.")
     
-    message(paste("Fitting GLM with: ", paste(current_vars, collapse = ", ")))
+    message(paste("Fitting GLM with the selected bioclimatic variables: ", paste(current_vars, collapse = ", ")))
     
     # Construct formula dynamically
     formula_str <- paste("presence ~ ", paste(current_vars, collapse = " + "))
@@ -417,6 +426,7 @@ run_current_sdm <- function(species1, species2, region, predictor_list) {
       Species = sp_name,
       Region = region,
       N_Points = nrow(species_data),
+      Bioclim_Vars = paste(current_vars, collapse = ", "),
       AUC = eval_res@auc
     ))
     
